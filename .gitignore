@@ -1,0 +1,14 @@
+# .gitignore
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+node_modules/ # If you have frontend dependencies
+# Docker volumes and logs
+primary_data/
+replica_data/
+pgadmin_data/
+*.log
+.DS_Store 
