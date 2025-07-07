@@ -1,0 +1,148 @@
+version: "3.8"
+
+services:
+  vault:
+    image: hashicorp/vault:1.15
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: myroot
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    cap_add:
+      - IPC_LOCK
+    command: vault server -dev
+    networks:
+      - pgnet
+  
+  vault-init:
+    image: hashicorp/vault:1.15
+    depends_on:
+      - vault
+    entrypoint: ["/bin/sh", "-c", "apk add curl && sh ./scripts/vault/init-vault.sh"]
+    working_dir: /vault
+    volumes:
+      - ./:/vault
+    networks:
+      - pgnet
+
+  postgres-primary:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    container_name: user_activity
+    environment:
+      # POSTGRES_USER: ${POSTGRES_PRIMARY_USER}
+      # POSTGRES_PASSWORD: ${POSTGRES_PRIMARY_PASSWORD}
+      # POSTGRES_DB: ${POSTGRES_PRIMARY_DB}
+      # POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_USER: primary_user
+      POSTGRES_PASSWORD: primary_postgres
+      POSTGRES_DB: user_activity
+      # POSTGRES_HOST: user_activity_db
+    ports:
+      - "5432:5432"
+    # depends_on:
+    #  - vault
+    #  - vault-init
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - wal_keep_size=64
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.custom.conf
+
+    # entrypoint: ["/bin/bash", "/init-primary.sh"]
+    # volumes:
+    #   - primary_data:/var/lib/postgresql/data
+    #   - ./scripts/db/primary:/docker-entrypoint-initdb.d
+    #   - ./scripts/db/primary/init-primary.sh:/init-primary.sh
+    volumes:
+      - primary_data:/var/lib/postgresql/data
+      - ./scripts/db/primary/init:/docker-entrypoint-initdb.d
+      - ./scripts/db/primary/pg_hba.conf:/etc/postgresql/pg_hba.custom.conf
+    networks:
+      - pgnet
+
+
+  postgres-replica:
+    image: postgres:15
+    container_name: user_activity_replica
+    environment:
+      # POSTGRES_USER: ${POSTGRES_REPLICA_USER}
+      # POSTGRES_PASSWORD: ${POSTGRES_REPLICA_PASSWORD}
+      # POSTGRES_DB: ${POSTGRES_REPLICA_DB}
+      POSTGRES_USER: replica_user
+      POSTGRES_PASSWORD: replica_password
+      POSTGRES_DB: user_activity_replica
+      # POSTGRES_HOST: replica_db
+      PGPASSWORD: replica_password
+    ports:
+      - "5433:5432"
+    depends_on:
+      - postgres-primary
+    entrypoint: ["/bin/bash", "/init-replica.sh"]
+    volumes:
+      - replica_data:/var/lib/postgresql/data
+      - ./scripts/db/replica/init-replica.sh:/init-replica.sh
+    networks:
+      - pgnet
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    networks:
+      - pgnet
+
+  # FOR TESTING ONLY: Remove before zipping final version
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres-primary
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json
+    networks:
+      - pgnet
+
+  api:
+    build: .
+    depends_on:
+      - postgres-replica
+      # - redis
+      # - vault
+      # - vault-init
+    ports:
+      - "8000:8000"
+    environment:
+      VAULT_URL: http://vault:8200
+      VAULT_TOKEN: myroot
+      VAULT_SECRET_PATH: secret/data/dau-creds
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthcheck"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+    networks:
+      - pgnet
+
+volumes:
+  primary_data:
+  replica_data:
+  pgadmin_data:
+
+networks:
+  pgnet:
