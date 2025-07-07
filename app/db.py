@@ -19,17 +19,17 @@ def get_readonly_db_connection():
         logger.error(f"Error connecting to read replica: {e}")
         raise
 
-# def get_db_connection():
-#     secrets = load_secrets_from_vault()
-#     db_config = {
-#         "host": secrets["pg_replica_host"],
-#         "port": secrets["pg_replica_port"],
-#         "user": secrets["pg_replica_user"],
-#         "password": secrets["pg_replica_pw"],
-#         "dbname": secrets["pg_replica_name"]
-#     }
-#     try:
-#         return psycopg2.connect(**db_config)
-#     except Exception as e:
-#         logger.error(f"Error connecting to database: {e}")
-#         raise
+def get_db_connection():
+    secrets = load_secrets_from_vault()
+    db_config = {
+        "host": secrets["pg_replica_host"],
+        "port": secrets["pg_replica_port"],
+        "user": secrets["pg_replica_user"],
+        "password": secrets["pg_replica_pw"],
+        "dbname": secrets["pg_replica_name"]
+    }
+    try:
+        return psycopg2.connect(**db_config)
+    except Exception as e:
+        logger.error(f"Error connecting to database: {e}")
+        raise
